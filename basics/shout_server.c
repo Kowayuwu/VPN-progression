@@ -46,7 +46,7 @@ int main(int argc, char const* argv[]){
 
     // Set time out for recvfrom 
     struct timeval tv;
-    tv.tv_sec = 5;   // seconds
+    tv.tv_sec = 10;   // seconds
     tv.tv_usec = 0;  // microseconds
 
     if (setsockopt(udp_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
@@ -54,27 +54,41 @@ int main(int argc, char const* argv[]){
         exit(1);
     }
 
+    const int MESSAGE_LIMIT = 5;
+    int message_count = 0;
+    while(message_count < MESSAGE_LIMIT){
+        char buffer[1024] = {0};
+        struct sockaddr sender;
+        socklen_t sender_addr_length = sizeof(sender);
 
-    char buffer[1024] = {0};
+        ssize_t recv_msg_len = recvfrom(udp_socket, buffer, sizeof(buffer) - 1, 0, &sender, &sender_addr_length);
 
-    // We don't care about the source ip address in this project so we pass NULL for the last two addr parameters
-    ssize_t n = recvfrom(udp_socket, buffer, sizeof(buffer) - 1, 0, NULL, NULL);
-
-    if (n < 0) {
-        // errno would be different depending on machine, both means the same thing in this context
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            printf("no data received within timeout, closing socket\n");
+        if (recv_msg_len < 0) {
+            /* 
+            Errno would be different depending on machine, both value means the same thing here in this context
+            EAGAIN - "there is no data available right now, try again later" during non-blocking IO
+            EWOULDBLOCK - "operation would block" - that is, the operation would have blocked, but the descriptor was placed in non-blocking mode. 
+            */ 
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    printf("no data received within timeout, closing socket\n");
+                } else {
+                    perror("error when calling recvfrom");
+                }
         } else {
-            perror("error when calling recvfrom");
+            buffer[recv_msg_len] = '\0';
+            printf("received: %s\n", buffer);
+            int sent = sendto(udp_socket, (const char *)buffer, (size_t) recv_msg_len, 0, (const struct sockaddr *) &sender, sender_addr_length);
+            if(sent < 0){
+                perror("error when sending back the message\n");
+            }
         }
-    } else {
-        buffer[n] = '\0';
-        printf("received: %s\n", buffer);
+        message_count += 1;
     }
+   
 
 
     if(close(udp_socket) == -1){
-        perror("failed to close socket\n");
+        perror("failed to close socket\n"); 
         exit(1);
     }
     return 0;

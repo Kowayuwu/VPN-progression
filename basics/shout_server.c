@@ -13,7 +13,7 @@
 #include <arpa/inet.h>
 #endif
 
-int main(int argc, char const* argv[]){
+int main(){
     /*
     AL_INET - IPv4 Internet protocal\
     SOCK_DGRAM - UDP

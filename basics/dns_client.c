@@ -88,7 +88,7 @@ int main(int argc, char *argv[]){
     };
 
 
-    // Question part
+    // Question part - [ qname qtype qclass ]
 
     /* 
         QNAME structure
@@ -109,16 +109,16 @@ int main(int argc, char *argv[]){
     qtype = htons(QTYPE_HOST_ADDRESS_VALUE);
     qclass = htons(QCLASS_INTERNET_VALUE);
     
-    
+
     // Create the query
     uint8_t query[512];
     uint8_t *query_ptr = query;
 
-    // Copy header
+    // Concat header
     memcpy(query_ptr, &query_header, sizeof(dns_header_t));
     query_ptr += sizeof(dns_header_t);
 
-    // Copy question
+    // Concat question
     memcpy(query_ptr, &qname, qname_length);
     query_ptr += qname_length;
 
@@ -130,7 +130,7 @@ int main(int argc, char *argv[]){
 
     // Server information
     const sa_family_t SERVER_SIN_FAMILY = AF_INET;
-    const in_port_t SERVER_SIN_PORT = htons(DNS_PORT_NUM); // need swap endianess??? 
+    const in_port_t SERVER_SIN_PORT = htons(DNS_PORT_NUM);
     const struct in_addr SERVER_SIN_ADDRESS = {
         .s_addr = inet_addr("8.8.8.8")
     };
@@ -146,12 +146,13 @@ int main(int argc, char *argv[]){
     ssize_t n = sendto(udp_socket, query, query_size, 0,(const struct sockaddr *) &SERVER_SOCKET_ADDRESS, (socklen_t)SERVER_SOCKET_ADDR_LEN);
 
     if(n < 0){
-        printf("Send query failed\n");
+        printf("Query failed\n");
     }else{
-        printf("Send query successed!\n");
+        printf("Query successed!\n");
     }
 
 
+    // Close socket
     if(close(udp_socket) == -1){
         perror("failed to close socket\n"); 
         exit(1);

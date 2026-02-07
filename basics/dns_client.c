@@ -22,10 +22,12 @@ Calling DNS server: 8.8.8.8, own by Google
 /**
  * Encodes a hostname (e.g., "www.google.com") into DNS qname format.
  * Format: [len]label[len]label[0]
+ * 
+ * Returns the length of the encoded message
  */
-void encode_dns_name(uint8_t *buffer, const char *hostname) {
+int encode_dns_name(uint8_t *buffer, const char *hostname) {
     int i, buffer_i = 0;
-    char name_copy[256]; // TODO: is 256 long enough
+    char name_copy[256]; // Is 256 long enough: apparently yes, max is 253 characters according to Google search
     
     strncpy(name_copy, hostname, 255);
     
@@ -34,7 +36,7 @@ void encode_dns_name(uint8_t *buffer, const char *hostname) {
     while (token != NULL) {
         size_t len = strlen(token);
         
-        // Length octect
+        // Length octect - how long is the upcoming substring
         buffer[buffer_i++] = (uint8_t)len;
         
         // The substring
@@ -45,22 +47,25 @@ void encode_dns_name(uint8_t *buffer, const char *hostname) {
         token = strtok(NULL, ".");
     }
     
-    // add termmiation, there's no padding needed according to the documentation 
+    // Add termmiation, there's no padding needed according to the documentation 
     buffer[buffer_i] = '\0';
+
+    return buffer_i + 1;
 }
 
 
 int main(int argc, char *argv[]){
 
-    if(argc != 1){
+    if(argc != 2){
         perror("please give me a dest host nameeeeeee");
         exit(1);
     }
 
-    const char *destination_url = argv[0];
+    const int DNS_PORT_NUM = 53;
+    const char *destination_url = argv[1];
     printf("Searching the IP for: %s\n", destination_url);
 
-    // Create udp socket, usually DNS query is small so we can just use udp
+    // Create udp socket, usually DNS query is small so we should just use udp
     int udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if(udp_socket == -1){
         perror("failed to initialize socket\n");
@@ -68,15 +73,15 @@ int main(int argc, char *argv[]){
     }
 
     // Header part
-    const int OUR_CHOSEN_ID = 100;
+    const uint16_t OUR_CHOSEN_ID = 100;
     dns_header_t query_header = {
-        .id = OUR_CHOSEN_ID,
+        .id = htons(OUR_CHOSEN_ID),
         .rd = 1,
         .tc = 0,
         .aa = 0,
         .opcode = 0,
         .qr = 0,
-        .qdcount = 1,
+        .qdcount = htons(1),
         .ancount = 0,
         .nscount = 0,
         .arcount = 0,
@@ -94,14 +99,57 @@ int main(int argc, char *argv[]){
             that this field may be an odd number of octets; no
             padding is used.
     */
-    // TODO: build QNAME
+    uint8_t qname[256];
+    int qname_length = encode_dns_name(qname, destination_url);
+
     const uint16_t QTYPE_HOST_ADDRESS_VALUE = 1;
     const uint16_t QCLASS_INTERNET_VALUE = 1;
-
-    const uint16_t QTYPE = QTYPE_HOST_ADDRESS_VALUE;
-    const uint16_t QCLASS = QCLASS_INTERNET_VALUE;
+    uint16_t qtype, qclass;
+    // Be aware of the endianess!!!!
+    qtype = htons(QTYPE_HOST_ADDRESS_VALUE);
+    qclass = htons(QCLASS_INTERNET_VALUE);
     
-    // TODO: send the request to the DNS server
+    
+    // Create the query
+    uint8_t query[512];
+    uint8_t *query_ptr = query;
+
+    // Copy header
+    memcpy(query_ptr, &query_header, sizeof(dns_header_t));
+    query_ptr += sizeof(dns_header_t);
+
+    // Copy question
+    memcpy(query_ptr, &qname, qname_length);
+    query_ptr += qname_length;
+
+    memcpy(query_ptr, &qtype, sizeof(qtype));
+    query_ptr += sizeof(qtype);
+
+    memcpy(query_ptr, &qclass, sizeof(qclass));
+    query_ptr += sizeof(qclass);
+
+    // Server information
+    const sa_family_t SERVER_SIN_FAMILY = AF_INET;
+    const in_port_t SERVER_SIN_PORT = htons(DNS_PORT_NUM); // need swap endianess??? 
+    const struct in_addr SERVER_SIN_ADDRESS = {
+        .s_addr = inet_addr("8.8.8.8")
+    };
+    const struct sockaddr_in SERVER_SOCKET_ADDRESS = {
+        .sin_family = SERVER_SIN_FAMILY,
+        .sin_port = SERVER_SIN_PORT,
+        .sin_addr = SERVER_SIN_ADDRESS
+    };
+    const socklen_t SERVER_SOCKET_ADDR_LEN = sizeof(SERVER_SOCKET_ADDRESS);
+    size_t query_size = query_ptr - query;
+
+    // Send DNS query!
+    ssize_t n = sendto(udp_socket, query, query_size, 0,(const struct sockaddr *) &SERVER_SOCKET_ADDRESS, (socklen_t)SERVER_SOCKET_ADDR_LEN);
+
+    if(n < 0){
+        printf("Send query failed\n");
+    }else{
+        printf("Send query successed!\n");
+    }
 
 
     if(close(udp_socket) == -1){

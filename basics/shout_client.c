@@ -49,7 +49,7 @@ int main(){
             int n = sendto(udp_socket, line, strlen(line), 0, (const struct sockaddr *) &SERVER_SOCKET_ADDRESS, (socklen_t)SERVER_SOCKET_ADDR_LEN);
             
             if(n < 0){
-                perror("server not up yet\n");
+                perror("Send message failed, maybe the server is not up yet?\n");
                 continue;
             }
             printf("waiting for server to respond\n");

@@ -36,7 +36,7 @@ int DA_size(DA *da) {
 }
 
 void DA_push (DA* da, void* x) {
-    // expand the memory if we reached the capacity limit
+    // Expand the memory if we reached the capacity limit
     if(da->size == da->capacity){
         da->items = realloc(da->items, sizeof(void*) * da->capacity * EXPAND_RATIO);
 
@@ -49,7 +49,7 @@ void DA_push (DA* da, void* x) {
         da->capacity *= EXPAND_RATIO;
     }
     
-    // this caused buffer overflow "Void * arithmetic is not defined" - https://stackoverflow.com/questions/4019671/can-i-do-arithmetic-on-void-pointers-in-c
+    // This causes buffer overflow "Void * arithmetic is not defined" - https://stackoverflow.com/questions/4019671/can-i-do-arithmetic-on-void-pointers-in-c
     /*
     void** next_item_ptr = da->items + da->size;
     *next_item_ptr = x;
@@ -107,7 +107,7 @@ int main() {
 
     assert(DA_size(da) == 0);
 
-    // basic push and pop test
+    // Basic push and pop test
     int x = 5;
     float y = 12.4;
     DA_push(da, &x);
@@ -121,15 +121,15 @@ int main() {
     assert(DA_size(da) == 0);
     assert(DA_pop(da) == NULL);
 
-    // basic set/get test
+    // Basic set/get test
     DA_push(da, &x);
     DA_set(da, &y, 0);
     assert(DA_get(da, 0) == &y);
     DA_pop(da);
     assert(DA_size(da) == 0);
 
-    // expansion test
-    DA *da2 = DA_new(); // use another DA to show it doesn't get overriden
+    // Expansion test
+    DA *da2 = DA_new(); // Use another DA to show it doesn't get overriden
     DA_push(da2, &x);
     int i, n = 100 * STARTING_CAPACITY, arr[n];
     for (i = 0; i < n; i++) {
@@ -143,7 +143,7 @@ int main() {
     for (; n; n--)
       DA_pop(da);
     assert(DA_size(da) == 0);
-    assert(DA_pop(da2) == &x); // this will fail if da doesn't expand
+    assert(DA_pop(da2) == &x); // This will fail if da doesn't expand
 
     DA_free(da);
     DA_free(da2);

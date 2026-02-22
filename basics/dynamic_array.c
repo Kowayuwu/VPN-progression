@@ -24,9 +24,7 @@ DA* DA_new (void) {
 
     dynamic_array -> capacity = STARTING_CAPACITY;
     dynamic_array -> size = 0;
-
-    void * start_of_array = malloc(sizeof(void*) * dynamic_array->capacity);
-    dynamic_array -> items = &start_of_array;
+    dynamic_array -> items = malloc(sizeof(void*) * dynamic_array->capacity);
 
     return dynamic_array;
 }
@@ -40,7 +38,7 @@ int DA_size(DA *da) {
 void DA_push (DA* da, void* x) {
     // expand the memory if we reached the capacity limit
     if(da->size == da->capacity){
-        da->items = realloc(da->items, da->capacity * EXPAND_RATIO);
+        da->items = realloc(da->items, sizeof(void*) * da->capacity * EXPAND_RATIO);
 
         // NOTE: ENOMEM means insufficient memory is available 
         if(da->items == NULL && errno == ENOMEM){
@@ -50,27 +48,47 @@ void DA_push (DA* da, void* x) {
 
         da->capacity *= EXPAND_RATIO;
     }
-
+    
+    // this caused buffer overflow "Void * arithmetic is not defined" - https://stackoverflow.com/questions/4019671/can-i-do-arithmetic-on-void-pointers-in-c
+    /*
+    void** next_item_ptr = da->items + da->size;
+    *next_item_ptr = x;
     da->size += 1;
-    void* next_item_ptr = da->items + da->size * sizeof(void *);
-    next_item_ptr = x;
+    */
+
+    da->items[da->size++] = x;
 
     return;
 }
 
 void* DA_pop(DA *da) {
-    void* last_item_ptr = da->items + da->size * sizeof(void *);
-    da->size -= 1;
-
-    return last_item_ptr;
+    
+    if(da->size <= 0){
+        printf("No items to pop, the list is empty\n");
+        return NULL;
+    }
+    return da->items[--da->size];
 }
 
 void DA_set(DA *da, void *x, int i) {
-    // TODO set at a given index, if possible
+    // Check if index is valid
+    if(i < 0 || i >= (da -> size)){
+        printf("Set index out of range\n");
+        return;
+    }
+
+    da->items[i] = x;
+    return;
 }
 
 void* DA_get(DA *da, int i) {
-    // TODO get from a given index, if possible
+    // Check if index is valid
+    if(i < 0 || i >= (da -> size)){
+        printf("Get index out of range\n");
+        return NULL;
+    }
+
+    return  da->items[i];
 }
 
 
@@ -83,6 +101,7 @@ void DA_free(DA *da) {
     return;
 }
 
+// Some test to see if it works
 int main() {
     DA* da = DA_new();
 
@@ -128,5 +147,5 @@ int main() {
 
     DA_free(da);
     DA_free(da2);
-    printf("OK\n");
+    printf("OK NICE\n");
 }

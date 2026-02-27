@@ -4,21 +4,21 @@
 #include <string.h>
 
 /*
-Another project unrelated to network. This is a SIMPLE hashmap implementation using C, it uses djb2 for hashing and open addressing + quadratic probing
-to handle collision. It is capable of get, set, delete, and resize but only allows string as the key.
+Another project unrelated to network. This is a SIMPLE hashmap implementation using C, 
+it uses djb2 for hashing and open addressing + quadratic probing to handle collision. 
+It is capable of get, set, delete, and resize but only allows string type as keys.
 */
 
-#define STARTING_BUCKETS 3
-#define MAX_KEY_SIZE 20
-#define INIT_HASH_NUM 5381
 #define CONSEC_COLLISION_LIMIT 10
-#define ERR_NO_VALID_ITEM_INDEX -1
-#define RESIZE_RATIO 2
 #define CONSEC_RESIZE_LIMIT 3
+#define INIT_HASH_NUM 5381
+#define MAX_KEY_SIZE 16
 #define OFFFSET_BASE_INIT 1
+#define RESIZE_RATIO 2
+#define STARTING_BUCKETS 3
 
 #define DEBUG 0
-
+#define ERR_NO_VALID_ITEM_INDEX -1
 
 typedef uint32_t Hash;
 
@@ -48,7 +48,7 @@ Hash hash_function(char *key){
         hash = ((hash << 5) + hash) + c; // this is equal to hash * 33 + c, apparently the number 33 is just better than other numbers
     }
 
-    //printf("\nConverting %s to %d\n", key, hash);
+    if(DEBUG) printf("\nConverting %s to %d\n", key, hash);
     return hash;
 }
 
@@ -61,7 +61,8 @@ Hashmap *Hashmap_new(uint32_t size){
 }
 
 /*
-Increase hashmap size by [ RESIZE_RATIO ], not doing anythihng fancy - just reallocate everything
+Scale the hashmap size by a factor of [ RESIZE_RATIO ], 
+not doing anythihng fancy - just reallocates everything
 But I made the re-assign of the pointer IN PLACE though! That's nice I think
 */
 void Hashmap_resize(Hashmap **old_hashmap){
@@ -83,7 +84,7 @@ void Hashmap_resize(Hashmap **old_hashmap){
 /*
 Quadratic probing function
 */
-int collision_probe_function(int base){
+int probe_offset(int base){
     return base*base;
 }
 
@@ -99,7 +100,7 @@ int get_exist_item_index(Hashmap * hashmap, char *key){
         collision_count++;
 
         if(hashmap -> items[index] == NULL){
-            index = (index + collision_probe_function(offset_base)) % (hashmap -> size);
+            index = (index + probe_offset(offset_base)) % (hashmap -> size);
             offset_base++;
             continue;
         }
@@ -107,7 +108,7 @@ int get_exist_item_index(Hashmap * hashmap, char *key){
         if(strcmp(hashmap -> items[index] -> key, key) == 0){
             return index;
         }else{
-            index = (index + collision_probe_function(offset_base)) % (hashmap -> size);
+            index = (index + probe_offset(offset_base)) % (hashmap -> size);
             offset_base++;
         }
     }
@@ -116,12 +117,12 @@ int get_exist_item_index(Hashmap * hashmap, char *key){
 }
 
 /*
-The key could be new or existing.
-Given a hashtable and an item, use quadratic probing to return: 
-    1. A valid index that points to empty space for new keys.
-    2, Return the index of the existing key.
+The key may be new or already existing. Given a hashtable and an item, this function returns:
+    1. A valid index pointing to an empty slot for new keys.
+    2. The index of the existing key, if present.
+    3. ERR_NO_VALID_ITEM_INDEX
 
-If consecutive collision happens over [CONSEC_COLLISION_LIMIT] of time, then it triggers a hashtable resize
+If more than CONSEC_COLLISION_LIMIT consecutive collisions occur, a hashtable resize is triggered.
 */
 int get_setter_index(Hashmap **hashmap, char *key){
 
@@ -138,13 +139,13 @@ int get_setter_index(Hashmap **hashmap, char *key){
     uint8_t resize_count = 0;
 
     while(((*hashmap) -> items[index]) != NULL && resize_count < CONSEC_RESIZE_LIMIT){
-        index = (index + collision_probe_function(offset_base)) % ((*hashmap) -> size);
+        index = (index + probe_offset(offset_base)) % ((*hashmap) -> size);
 
         collision_count ++;
         offset_base ++;
 
         if(collision_count > CONSEC_COLLISION_LIMIT){
-            // resize
+            // Resize
             Hashmap_resize(hashmap);
             printf("Increased hashmap size to %d\n", (*hashmap) -> size);
             resize_count += 1;
@@ -171,7 +172,7 @@ int get_setter_index(Hashmap **hashmap, char *key){
 
 
 void Hashmap_free(Hashmap * hashmap){
-    // Free all items individually and their string key
+    // Free all items individually and their string key (cuz strdup was used)
     for(int i = 0; i<hashmap->size; i++){
         if(hashmap->items[i] != NULL){
             free(hashmap->items[i]->key);
@@ -218,7 +219,6 @@ void* Hashmap_get(Hashmap *hashmap, char *key){
         return NULL;
     }
         
-
     return hashmap -> items[index] -> value;
 }
 
@@ -236,7 +236,6 @@ void Hashmap_delete(Hashmap *hashmap, char *key){
     free(hashmap->items[index]);
     hashmap->items[index] = NULL;
 
-    
     return;
 }
 
@@ -288,7 +287,7 @@ int main() {
     }
     if(DEBUG) print_all_items(h);
 
-    // Should be able to get all the things correctly if collision and resize were handled correctly
+    // Should be able to get all the things correctly if collision and resize were correctly handled
     for (i = 0; i < n; i++) {
         sprintf(key, "item %d", i);
         assert(Hashmap_get(h, key) == &ns[i]);

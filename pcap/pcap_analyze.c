@@ -172,7 +172,7 @@ int main()
             break;
         }
 
-        // see if ipv4 options exists, if so then we need to read more, NOTE that in ipv4 the IHL unit is in 32 bits, NOT 1 byte
+        // see if ipv4 options exists, if so then we need to read more, NOTE that in ipv4 the Internet Header Length (IHL) unit is in 32 bits, NOT 1 byte
         uint8_t ihl_in_bytes = (ipv4_header.version_and_IHL & 0x0f) << 2;
         uint8_t ipv4_options_length = ihl_in_bytes - IPV4_HEADER_MIN_SIZE;
 

@@ -41,6 +41,7 @@ class HttpMessage(object):
         if self.parser_state == HttpParserState.HEADERS:
             while True:
                 header_new_line = bs.readline()
+                # print(f"header new line {header_new_line}")
                 
                 # NOTE: Packet Fragment could happen exactly at the end of line, lead to empty readline not CLRF
                 # Or there's just no header at all

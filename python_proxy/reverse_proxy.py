@@ -18,6 +18,9 @@ Concurrently handles client using io multiplexing
 import socket
 from http_parser import HttpMessage, HttpParserState, HTTPMessageType
 import select
+import gzip
+
+DEBUG: bool = True
 
 BASIC_SERVER_PORT: int = 9000
 LISTENING_PORT: int = 8000
@@ -108,6 +111,11 @@ def deal_with_client(client_socket: socket.socket) -> None:
             break
         server_response.parse(chunk)
         print(f"<-    ---           received {len(chunk)} bytes of data from upstream")
+
+    # Compress the response with gzip if the origin allows it
+    if allow_gzip(client_request):
+        compress_response_gzip(server_response)
+
     io_to_send[client_socket] = (server_response, client_request.should_keep_alive())
 
     # Close the connection to upstream after we get the response
@@ -138,7 +146,25 @@ def send_response(client_socket: socket.socket):
         print("Client does not want to keep socket alive")
         clean_client_sock(client_socket)
 
+def allow_gzip(req: HttpMessage) -> bool:
+    '''
+    Tells us whether the request allows gzip as a compression method
+    '''
+    if b'Accept-Encoding' not in req.headers:
+        return False
+    if b'gzip' not in req.headers[b'Accept-Encoding']:
+        return False
+    return True
 
+def compress_response_gzip(res: HttpMessage):
+    # gzip only happens on the body, if you do it on the headers the server can't interperate them
+    pre_size = len(res.body)
+    res.body = gzip.compress(res.body)
+    post_size = len(res.body)
+    res.add_header(key="Content-Encoding", value="gzip")
+    res.add_header(key="Content-Length", value=str(post_size))
+
+    if DEBUG: print(f"Compressed response body with gzip, size before: {pre_size}, after: {post_size}")
 
 
 if __name__ == '__main__':

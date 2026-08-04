@@ -1,25 +1,28 @@
 '''
-This is a reverse proxy running on PORT 8000 and assumes the http server runs at port 9000
+This is a simple reverse proxy (gateway) running on PORT 8000 and assumes the http server runs at port 9000
     NOTE: (make sure a website is up when running this)
 
-Recieves http request, forward to upstream server, return back the response to client
+Recieves http request, forward to upstream server, return back the response to client.
+Implemented mainly for HTTP/1.0 and HTTP/1.1.
+
 
 - Main features
-Incrementally parses the message, so this works even when packet fragmentation happens
+1. Incrementally parses the message, so this works even when packet fragmentation happens
 
-Keeps the connection alive for HTTP 1.0 1.1, but only with the client, haven't implement this with the upstream
+2. Keeps the connection alive for HTTP/1.0 & 1.1, but only with the client, haven't implement this with the upstream
     For HTTP 1.0: Close connection after each request unless specified connection keep-alive
 
     For HTTP 1.1: Make connection keep-alive as default, only close if specified in the connection 
     field (or missing connection field)
 
 
-Concurrently handles client using io multiplexing (Unix select())
+3. Concurrently handles client using io multiplexing (using Unix select())
 
-Compress response body using gzip, with some simple constraint checks
+4. Compress response body using gzip, with some simple constraint checks
 
-Does simple content cacheing
+5. Does simple content cacheing
     NOTE: the rfc doc https://www.rfc-editor.org/info/rfc9111/
+
 -
 
 
@@ -32,14 +35,14 @@ import select
 import gzip
 import re
 
+
+
 DEBUG: bool = True
 REQUEST_CACHE: bool = True
 
 BASIC_SERVER_PORT: int = 9000
 LISTENING_PORT: int = 8000
-
 BUFFER: int = 1024
-
 TARGET_ADDR: tuple = ("localhost", BASIC_SERVER_PORT)
 
 io_input: list[socket.socket] = []
@@ -51,13 +54,20 @@ cache: dict[bytes, tuple[HttpMessage, datetime]] = {}
 BAD_REQUEST_MSG = b'HTTP/1.1 400 Bad Request\r\n\r\n'
 INTERNAL_SERVER_ERROR = b'HTTP/1.1 500 Internal Server Error\r\n\r\n'
 
+
+
 def clean_client_sock(client_socket: socket.socket):
+    '''
+    Closes the given socket (should be a client socket), and deletes it
+    from anywhere necessary, including the io multiplexing watch list
+    '''
     client_socket.close()
-    print('Connection to client closed')
+    if DEBUG: print('Connection to client closed\n---\n')
 
     client_request_dict.pop(client_socket, None)
     io_input.remove(client_socket)
     io_output.remove(client_socket)
+
 
 
 def deal_with_client(client_socket: socket.socket) -> None:
@@ -69,16 +79,16 @@ def deal_with_client(client_socket: socket.socket) -> None:
         3. send request to server if there's no cache, store the response in cache and io_to_send
         4. check if keep_alive is needed
     
-    cleans the client socket if necessary, e.g. connection closed
+    cleans the client socket if needed, e.g. connection closed
     '''
 
-    # Get the client request if there's incomplete meesage stored, or else start a new HTTP Message
+    # Get the client request if there's a previous incomplete meesage, or else start a new HTTP Message
     client_request = client_request_dict.get(client_socket, HttpMessage(type=HTTPMessageType.REQUEST))
     client_request_dict[client_socket] = client_request
 
-    # Read the stream, from select() it should guarantee one successful recv()
+    # Read the stream, this should guarantee one successful recv()
     msg_in: bytes = client_socket.recv(BUFFER)
-    print(f"<-    received {len(msg_in)} bytes of data from client ---           ")
+    print(f"<-    received {len(msg_in)} bytes of data from client ---")
     
     try:
         client_request.parse(msg_in)
@@ -100,13 +110,14 @@ def deal_with_client(client_socket: socket.socket) -> None:
 
     server_response_cache = retrieve_cache(client_request)
 
-    # Cache hit!! store it to io_to_send so it gets send later, and delete request
+    # Cache hit! store it to io_to_send so it gets send later, and delete request
     if server_response_cache:
+        if DEBUG: print("[[Cache hit!]]")
         io_to_send[client_socket] = (server_response_cache, client_request.should_keep_alive())
         client_request_dict.pop(client_socket, None)
         return
 
-    # No cache available, connect to server TODO: make persistant connection
+    # No cache available, connect to upstream TODO: make persistant connection to upstream
     upstream_socket = socket.socket(family=socket.AF_INET, type=socket.SocketKind.SOCK_STREAM)
     upstream_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     upstream_socket.connect(("localhost", BASIC_SERVER_PORT))
@@ -140,12 +151,11 @@ def deal_with_client(client_socket: socket.socket) -> None:
         compress_response_gzip(server_response)
 
 
-    if REQUEST_CACHE: server_response.add_header('Cache-Control', 'max-age=10')
+    if REQUEST_CACHE: server_response.add_header('Cache-Control', 'max-age=20')
     maybe_cache(client_request, server_response)
     io_to_send[client_socket] = (server_response, client_request.should_keep_alive())
     upstream_socket.close()
 
-    
 
 
 
@@ -168,6 +178,7 @@ def send_response(client_socket: socket.socket):
         clean_client_sock(client_socket)
 
 
+
 def maybe_cache(req: HttpMessage, res: HttpMessage):
     '''
     Store cache if req method is GET and res status is 200 ok
@@ -187,7 +198,8 @@ def maybe_cache(req: HttpMessage, res: HttpMessage):
     if match:
         age = int(match.group(1))
         cache[req.uri] = (res, datetime.now() + timedelta(seconds=age))
-        if DEBUG: print(f"Cached {req.uri} response, for {age} seconds")
+        if DEBUG: print(f"[[Cached {req.uri} response, for {age} seconds]]")
+
 
 
 def retrieve_cache(req: HttpMessage) -> Optional[HttpMessage]:
@@ -197,17 +209,18 @@ def retrieve_cache(req: HttpMessage) -> Optional[HttpMessage]:
     key = req.uri
     prev_res, expire_time = cache.get(key, (None, None))
     if not prev_res:
-        # thinking of not cleaning the cache here because the cache should get overwritten later -
-        # additionally, there might be some req that doesn't care about stale data?
-        if DEBUG: print("No Cache found")
+        # thinking of not cleaning the cache here, because the cache should get overwritten later -
+        # additionally, there might be some origins that doesn't care about stale data?
+        if DEBUG: print("[[No Cache found]]")
         return None
 
     if datetime.now() > expire_time:
-        if DEBUG: print("Cache expired")
+        if DEBUG: print("[[Cache expired]]")
         return
 
-    print("Returning Cache")
+    print("[[Returning Cache]]")
     return prev_res
+
 
 
 def allow_gzip(req: HttpMessage) -> bool:
@@ -220,21 +233,27 @@ def allow_gzip(req: HttpMessage) -> bool:
         return False
     return True
 
+
+
 def compress_response_gzip(res: HttpMessage):
     '''
     Gzip only on the res body, if you do it on the headers the server can't interperate them
     '''
     pre_size = len(res.body)
+    if pre_size == 0:
+        if DEBUG: print(f"[[Response body has nothing, not doing gzip]]")
+        return
     res.body = gzip.compress(res.body)
     post_size = len(res.body)
     res.add_header(key="Content-Encoding", value="gzip")
     res.add_header(key="Content-Length", value=str(post_size))
 
-    if DEBUG: print(f"Compressed response body with gzip, size before: {pre_size}, after: {post_size}")
+    if DEBUG: print(f"[[Compressed response body with gzip, size before: {pre_size}, after: {post_size}]]")
+
 
 
 if __name__ == '__main__':
-    # Connect to client
+    # Open up the server socket to accept connections
     bind_socket = socket.socket(family=socket.AF_INET, type=socket.SocketKind.SOCK_STREAM)
     bind_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     bind_socket.setblocking(False)
@@ -249,7 +268,7 @@ if __name__ == '__main__':
 
         for fd in readable:
 
-            # Accept new clients and add them to io multiplexing watch list
+            # Server socket has pending read, accept new clients and add them to io multiplexing watch list
             if fd == bind_socket:
                 client_socket, client_addr = bind_socket.accept()
                 client_socket.setblocking(False)
